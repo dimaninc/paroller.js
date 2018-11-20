@@ -11,7 +11,7 @@
         module.exports = factory(require('jquery'));
     }
     else {
-        factory(jQuery);
+        factory(window.Zepto || window.jQuery || window.$);
     }
 })(function ($) {
     'use strict';
@@ -31,9 +31,9 @@
         vertical: function (elem, elemOffset, oldTransform) {
             (oldTransform === 'none' ? oldTransform = '' : true);
             return elem.css({
-                '-webkit-transform': 'translateY(' + elemOffset + 'px)' + oldTransform,
-                '-moz-transform': 'translateY(' + elemOffset + 'px)' + oldTransform,
-                'transform': 'translateY(' + elemOffset + 'px)' + oldTransform,
+                '-webkit-transform': 'translate3d(0, ' + elemOffset + 'px, 0)' + oldTransform,
+                '-moz-transform': 'translate3d(0, ' + elemOffset + 'px, 0)' + oldTransform,
+                'transform': 'translate3d(0, ' + elemOffset + 'px, 0)' + oldTransform,
                 'transition': 'transform linear',
                 'will-change': 'transform'
             });
@@ -41,9 +41,9 @@
         horizontal: function (elem, elemOffset, oldTransform) {
             (oldTransform === 'none' ? oldTransform = '' : true);
             return elem.css({
-                '-webkit-transform': 'translateX(' + elemOffset + 'px)' + oldTransform,
-                '-moz-transform': 'translateX(' + elemOffset + 'px)' + oldTransform,
-                'transform': 'translateX(' + elemOffset + 'px)' + oldTransform,
+                '-webkit-transform': 'translate3d(0, ' + elemOffset + 'px, 0, 0)' + oldTransform,
+                '-moz-transform': 'translate3d(0, ' + elemOffset + 'px, 0, 0)' + oldTransform,
+                'transform': 'translate3d(0, ' + elemOffset + 'px, 0, 0)' + oldTransform,
                 'transition': 'transform linear',
                 'will-change': 'transform'
             });
@@ -102,11 +102,13 @@
     };
 
     $.fn.paroller = function (options) {
-        var windowHeight = $(window).height();
-        var documentHeight = $(document).height();
+        var $window = $(window);
+        var $document = $(document);
+        var windowHeight = $window.height();
+        var documentHeight = $document.height();
 
         // default options
-        var options = $.extend({
+        options = $.extend({
             factor: 0, // - to +
             factorXs: 0, // - to +
             factorSm: 0, // - to +
@@ -119,7 +121,8 @@
 
         return this.each(function () {
             var $this = $(this);
-            var width = $(window).width();
+            var $viewport = $($this.data('paroller-viewport') || $this);
+            var width = $window.width();
             var offset = $this.offset().top;
             var height = $this.outerHeight();
 
@@ -150,70 +153,61 @@
                 }
             }
 
-            $(window).on('resize', function () {
-                var scrolling = $(this).scrollTop();
-                width = $(window).width();
+            var updatePosition = function(mode) {
+                var scrollTop = $window.scrollTop();
+                windowHeight = $window.height();
+                var scrollBottom = scrollTop + windowHeight;
+                documentHeight = $document.height();
+                width = $window.width();
                 offset = $this.offset().top;
                 height = $this.outerHeight();
                 factor = setMovement.factor($this, width, options);
 
-                bgOffset = Math.round(offset * factor);
-                transform = Math.round((offset - (windowHeight / 2) + height) * factor);
+                var viewportTop = $viewport.offset().top;
+                var viewportHeight = $viewport.outerHeight();
+                var viewportBottom = viewportTop + viewportHeight;
 
-                if (! working) {
+                var isVisible = viewportBottom > scrollTop && viewportTop < scrollBottom;
+                if (!isVisible) {
+                    return false;
+                }
+
+                bgOffset = mode === 'scroll'
+                    ? Math.round((offset - scrollTop) * factor)
+                    : Math.round(offset * factor);
+                transform = mode === 'scroll'
+                    ? Math.round(((offset - (windowHeight / 2) + height) - scrollTop) * factor)
+                    : Math.round((offset - (windowHeight / 2) + height) * factor);
+
+                if (!working) {
                     window.requestAnimationFrame(scrollAction);
                     working = true;
                 }
 
                 if (type === 'background') {
-                    clearPositions.background($this);
+                    mode !== 'scroll' && clearPositions.background($this);
                     if (direction === 'vertical') {
                         setDirection.bgVertical($this, bgOffset);
-                    }
-                    else if (direction === 'horizontal') {
+                    } else if (direction === 'horizontal') {
                         setDirection.bgHorizontal($this, bgOffset);
                     }
-                }
-                else if ((type === 'foreground') && (scrolling <= documentHeight)) {
-                    clearPositions.foreground($this);
+                } else if ((type === 'foreground') && (scrollTop <= documentHeight)) {
+                    mode !== 'scroll' && clearPositions.foreground($this);
                     if (direction === 'vertical') {
                         setDirection.vertical($this, transform);
-                    }
-                    else if (direction === 'horizontal') {
+                    } else if (direction === 'horizontal') {
                         setDirection.horizontal($this, transform);
                     }
                 }
-            });
+            };
 
-            $(window).on('scroll', function () {
-                var scrolling = $(this).scrollTop();
-                documentHeight = $(document).height();
-
-                bgOffset = Math.round((offset - scrolling) * factor);
-                transform = Math.round(((offset - (windowHeight / 2) + height) - scrolling) * factor);
-
-                if (! working) {
-                    window.requestAnimationFrame(scrollAction);
-                    working = true;
-                }
-
-                if (type === 'background') {
-                    if (direction === 'vertical') {
-                        setDirection.bgVertical($this, bgOffset);
-                    }
-                    else if (direction === 'horizontal') {
-                        setDirection.bgHorizontal($this, bgOffset);
-                    }
-                }
-                else if ((type === 'foreground') && (scrolling <= documentHeight)) {
-                    if (direction === 'vertical') {
-                        setDirection.vertical($this, transform, oldTransform);
-                    }
-                    else if (direction === 'horizontal') {
-                        setDirection.horizontal($this, transform, oldTransform);
-                    }
-                }
-            });
+            $window
+                .on('resize.paroller', function () {
+                    updatePosition('resize');
+                })
+                .on('scroll.paroller', function () {
+                    updatePosition('scroll');
+                });
         });
     };
 });
