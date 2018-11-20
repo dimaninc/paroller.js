@@ -29,21 +29,21 @@
             return elem.css({'background-position': -bgOffset + 'px' + ' center'});
         },
         vertical: function (elem, elemOffset, oldTransform) {
-            (oldTransform === 'none' ? oldTransform = '' : true);
+            (!oldTransform || oldTransform === 'none' ? oldTransform = '' : true);
             return elem.css({
-                '-webkit-transform': 'translate3d(0, ' + elemOffset + 'px, 0)' + oldTransform,
-                '-moz-transform': 'translate3d(0, ' + elemOffset + 'px, 0)' + oldTransform,
-                'transform': 'translate3d(0, ' + elemOffset + 'px, 0)' + oldTransform,
+                '-webkit-transform': 'translate3d(0, ' + elemOffset + 'px, 0) ' + oldTransform,
+                '-moz-transform': 'translate3d(0, ' + elemOffset + 'px, 0) ' + oldTransform,
+                'transform': 'translate3d(0, ' + elemOffset + 'px, 0) ' + oldTransform,
                 'transition': 'transform linear',
                 'will-change': 'transform'
             });
         },
         horizontal: function (elem, elemOffset, oldTransform) {
-            (oldTransform === 'none' ? oldTransform = '' : true);
+            (!oldTransform || oldTransform === 'none' ? oldTransform = '' : true);
             return elem.css({
-                '-webkit-transform': 'translate3d(0, ' + elemOffset + 'px, 0, 0)' + oldTransform,
-                '-moz-transform': 'translate3d(0, ' + elemOffset + 'px, 0, 0)' + oldTransform,
-                'transform': 'translate3d(0, ' + elemOffset + 'px, 0, 0)' + oldTransform,
+                '-webkit-transform': 'translate3d(' + elemOffset + 'px, 0, 0) ' + oldTransform,
+                '-moz-transform': 'translate3d(' + elemOffset + 'px, 0, 0) ' + oldTransform,
+                'transform': 'translate3d(' + elemOffset + 'px, 0, 0) ' + oldTransform,
                 'transition': 'transform linear',
                 'will-change': 'transform'
             });
@@ -52,46 +52,38 @@
 
     var setMovement = {
         factor: function (elem, width, options) {
-            var dataFactor = elem.data('paroller-factor');
-            var factor = (dataFactor) ? dataFactor : options.factor;
+            var factor = elem.data('paroller-factor') || options.factor;
             if (width < 576) {
-                var dataFactorXs = elem.data('paroller-factor-xs');
-                var factorXs = (dataFactorXs) ? dataFactorXs : options.factorXs;
-                return (factorXs) ? factorXs : factor;
-            }
-            else if (width <= 768) {
-                var dataFactorSm = elem.data('paroller-factor-sm');
-                var factorSm = (dataFactorSm) ? dataFactorSm : options.factorSm;
-                return (factorSm) ? factorSm : factor;
-            }
-            else if (width <= 1024) {
-                var dataFactorMd = elem.data('paroller-factor-md');
-                var factorMd = (dataFactorMd) ? dataFactorMd : options.factorMd;
-                return (factorMd) ? factorMd : factor;
-            }
-            else if (width <= 1200) {
-                var dataFactorLg = elem.data('paroller-factor-lg');
-                var factorLg = (dataFactorLg) ? dataFactorLg : options.factorLg;
-                return (factorLg) ? factorLg : factor;
+                return elem.data('paroller-factor-xs') || options.factorXs || factor;
+            } else if (width <= 768) {
+                return elem.data('paroller-factor-sm') || options.factorSm || factor;
+            } else if (width <= 1024) {
+                return elem.data('paroller-factor-md') || options.factorMd || factor;
+            } else if (width <= 1200) {
+                return elem.data('paroller-factor-lg') || options.factorLg || factor;
             } else if (width <= 1920) {
-                var dataFactorXl = elem.data('paroller-factor-xl');
-                var factorXl = (dataFactorXl) ? dataFactorXl : options.factorXl;
-                return (factorXl) ? factorXl : factor;
+                return elem.data('paroller-factor-xl') || options.factorXl || factor;
             } else {
                 return factor;
             }
         },
-        bgOffset: function (offset, factor) {
-            return Math.round(offset * factor);
+        bgOffset: function (mode, factor, scrollTop, offset) {
+            return mode === 'scroll' || true
+                ? Math.round((offset - scrollTop) * factor)
+                : Math.round(offset * factor);
         },
-        transform: function (offset, factor, windowHeight, height) {
-            return Math.round((offset - (windowHeight / 2) + height) * factor);
+        transform: function (mode, factor, scrollTop, offset, windowHeight, height) {
+            return mode === 'scroll' || true
+                ? Math.round(((offset - (windowHeight / 2) + height) - scrollTop) * factor)
+                : Math.round((offset - (windowHeight / 2) + height) * factor);
         }
     };
 
     var clearPositions = {
         background: function (elem) {
-            return elem.css({'background-position': 'unset'});
+            return elem.css({
+                'background-position': 'unset'
+            });
         },
         foreground: function (elem) {
             return elem.css({
@@ -102,11 +94,6 @@
     };
 
     $.fn.paroller = function (options) {
-        var $window = $(window);
-        var $document = $(document);
-        var windowHeight = $window.height();
-        var documentHeight = $document.height();
-
         // default options
         options = $.extend({
             factor: 0, // - to +
@@ -121,63 +108,40 @@
 
         return this.each(function () {
             var $this = $(this);
+            var $window = $(window);
+            var $document = $(document);
             var $viewport = $($this.data('paroller-viewport') || $this);
-            var width = $window.width();
-            var offset = $this.offset().top;
-            var height = $this.outerHeight();
+            var type = $this.data('paroller-type') || options.type;
+            var direction = $this.data('paroller-direction') || options.direction;
+            var windowHeight;
+            var documentHeight;
+            var width;
+            var offset;
+            var height;
+            var factor;
+            var bgOffset;
+            var transform;
+            var scrollTop, scrollBottom;
 
-            var dataType = $this.data('paroller-type');
-            var dataDirection = $this.data('paroller-direction');
-            var oldTransform = $this.css('transform');
-
-            var type = (dataType) ? dataType : options.type;
-            var direction = (dataDirection) ? dataDirection : options.direction;
-            var factor = setMovement.factor($this, width, options);
-            var bgOffset = setMovement.bgOffset(offset, factor);
-            var transform = setMovement.transform(offset, factor, windowHeight, height);
-
-            if (type === 'background') {
-                if (direction === 'vertical') {
-                    setDirection.bgVertical($this, bgOffset);
-                }
-                else if (direction === 'horizontal') {
-                    setDirection.bgHorizontal($this, bgOffset);
-                }
-            }
-            else if (type === 'foreground') {
-                if (direction === 'vertical') {
-                    setDirection.vertical($this, transform, oldTransform);
-                }
-                else if (direction === 'horizontal') {
-                    setDirection.horizontal($this, transform, oldTransform);
-                }
-            }
-
-            var updatePosition = function(mode) {
-                var scrollTop = $window.scrollTop();
+            var updatePosition = function(mode, force) {
+                scrollTop = $window.scrollTop();
                 windowHeight = $window.height();
-                var scrollBottom = scrollTop + windowHeight;
+                scrollBottom = scrollTop + windowHeight;
                 documentHeight = $document.height();
                 width = $window.width();
-                offset = $this.offset().top;
+                offset = $this.offset().top; //$this[0].offsetTop;
                 height = $this.outerHeight();
                 factor = setMovement.factor($this, width, options);
 
-                var viewportTop = $viewport.offset().top;
+                var viewportTop = $viewport.offset().top; //$viewport[0].offsetTop;
                 var viewportHeight = $viewport.outerHeight();
                 var viewportBottom = viewportTop + viewportHeight;
 
                 var isVisible = viewportBottom > scrollTop && viewportTop < scrollBottom;
-                if (!isVisible) {
-                    return false;
-                }
 
-                bgOffset = mode === 'scroll'
-                    ? Math.round((offset - scrollTop) * factor)
-                    : Math.round(offset * factor);
-                transform = mode === 'scroll'
-                    ? Math.round(((offset - (windowHeight / 2) + height) - scrollTop) * factor)
-                    : Math.round((offset - (windowHeight / 2) + height) * factor);
+                if (!isVisible && !force) {
+                    return;
+                }
 
                 if (!working) {
                     window.requestAnimationFrame(scrollAction);
@@ -185,6 +149,7 @@
                 }
 
                 if (type === 'background') {
+                    bgOffset = setMovement.bgOffset(mode, factor, offset, scrollTop);
                     mode !== 'scroll' && clearPositions.background($this);
                     if (direction === 'vertical') {
                         setDirection.bgVertical($this, bgOffset);
@@ -192,6 +157,7 @@
                         setDirection.bgHorizontal($this, bgOffset);
                     }
                 } else if ((type === 'foreground') && (scrollTop <= documentHeight)) {
+                    transform = setMovement.transform(mode, factor, scrollTop, offset, windowHeight, height);
                     mode !== 'scroll' && clearPositions.foreground($this);
                     if (direction === 'vertical') {
                         setDirection.vertical($this, transform);
@@ -208,6 +174,8 @@
                 .on('scroll.paroller', function () {
                     updatePosition('scroll');
                 });
+
+            updatePosition('scroll', true);
         });
     };
 });
